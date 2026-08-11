@@ -184,19 +184,45 @@ const $ = function (id) { return document.getElementById(id); };
    bearbeiten und erweitern. Bewusst geraetelokal: jeder Messplatz pflegt die
    Liste, die er braucht, ohne Abstimmung mit den anderen. */
 const START = {
-  sorten:    ['Riesling', 'Grauburgunder', 'Dornfelder'],
-  standorte: ['Oppenheim']
+  sorten: ['Dornfelder', 'Grauburgunder', 'Müller-Thurgau', 'Portugieser',
+           'Regent', 'Riesling', 'Sauvignon blanc', 'Silvaner',
+           'Souvignier gris', 'Spätburgunder', 'Weißburgunder'],
+  standorte: ['Bingen', 'Flörsheim-Dalsheim', 'Gau-Algesheim', 'Gau-Odernheim',
+              'Guntersblum', 'Mommenheim', 'Offstein', 'Oppenheim',
+              'Stadecken-Elsheim', 'Westhofen', 'Wöllstein']
 };
+
+/* Deutsche Sortierung: Umlaute wie die Grundbuchstaben, ss fuer ß.
+   Die Listen werden bei jedem Schreiben neu sortiert, damit spaeter
+   hinzugefuegte Eintraege an ihrer Stelle stehen und nicht hinten anhaengen. */
+const COLL = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
+function sortDe(arr) { return arr.slice().sort(function (a, b) { return COLL.compare(a, b); }); }
 
 function listGet(key) {
   try {
     const v = JSON.parse(localStorage.getItem('bz.liste.' + key) || 'null');
-    if (Array.isArray(v)) return v;
+    if (Array.isArray(v)) return sortDe(v);
   } catch (e) { /* beschaedigter Eintrag -> Startliste */ }
-  return START[key].slice();
+  return sortDe(START[key]);
 }
 function listSet(key, arr) {
-  localStorage.setItem('bz.liste.' + key, JSON.stringify(arr));
+  localStorage.setItem('bz.liste.' + key, JSON.stringify(sortDe(arr)));
+}
+
+/* Neue Startlisten auf Geraete bringen, die schon eine aeltere Fassung haben.
+   Bewusst nur ergaenzend: selbst angelegte Eintraege bleiben unangetastet,
+   entfernte Standardeintraege kommen allerdings wieder. */
+const SEED_VERSION = 2;
+function seedLists() {
+  if (parseInt(localStorage.getItem('bz.liste.version') || '0', 10) >= SEED_VERSION) return;
+  ['sorten', 'standorte'].forEach(function (k) {
+    const merged = listGet(k);
+    START[k].forEach(function (s) {
+      if (!merged.some(function (x) { return COLL.compare(x, s) === 0; })) merged.push(s);
+    });
+    listSet(k, merged);
+  });
+  localStorage.setItem('bz.liste.version', String(SEED_VERSION));
 }
 
 function Picker(key, label, host, onChange) {
@@ -217,25 +243,44 @@ Picker.prototype.select = function (v) {
   if (this.onChange) this.onChange(v);
 };
 
+/* Vorhandener Eintrag, unabhaengig von Gross-/Kleinschreibung und Umlautform --
+   sonst stehen "Riesling" und "riesling" nebeneinander in der Liste. */
+Picker.prototype.find = function (v) {
+  for (let i = 0; i < this.items.length; i++) {
+    if (COLL.compare(this.items[i], v) === 0) return this.items[i];
+  }
+  return null;
+};
+
+Picker.prototype.store = function (arr) {
+  listSet(this.key, arr);
+  this.items = listGet(this.key);          // sortiert zurueckholen
+};
+
 /* Nimmt einen Wert in die Liste auf, falls er noch fehlt (z. B. aus alten
    Proben oder aus einer frueheren Fassung der App). */
 Picker.prototype.ensure = function (v) {
   v = (v || '').trim();
-  if (!v || this.items.indexOf(v) >= 0) return;
-  this.items.push(v); listSet(this.key, this.items); this.render();
+  if (!v || this.find(v)) return;
+  this.store(this.items.concat([v]));
+  this.render();
 };
 
 Picker.prototype.add = function (v) {
   v = (v || '').trim();
   if (!v) return;
-  if (this.items.indexOf(v) < 0) { this.items.push(v); listSet(this.key, this.items); }
+  const vorhanden = this.find(v);
+  if (vorhanden) { this.select(vorhanden); return; }
+  this.store(this.items.concat([v]));
   this.select(v);
 };
 
 Picker.prototype.remove = function (v) {
   const i = this.items.indexOf(v);
   if (i < 0) return;
-  this.items.splice(i, 1); listSet(this.key, this.items);
+  const rest = this.items.slice();
+  rest.splice(i, 1);
+  this.store(rest);
   localStorage.removeItem(LS.radius + '.' + v.toLowerCase());
   if (this.value === v) { this.value = ''; localStorage.removeItem('bz.sel.' + this.key); }
   this.render();
@@ -245,8 +290,11 @@ Picker.prototype.rename = function (alt, neu) {
   neu = (neu || '').trim();
   const i = this.items.indexOf(alt);
   if (i < 0 || !neu || neu === alt) { this.render(); return; }
-  if (this.items.indexOf(neu) >= 0) { this.render(); return; }   // Dublette
-  this.items[i] = neu; listSet(this.key, this.items);
+  const kollision = this.find(neu);
+  if (kollision && kollision !== alt) { this.render(); return; }   // Dublette
+  const next = this.items.slice();
+  next[i] = neu;
+  this.store(next);
   // Kalibrierung mit umziehen, sonst geht sie beim Umbenennen verloren
   const old = localStorage.getItem(LS.radius + '.' + alt.toLowerCase());
   if (old) {
@@ -656,6 +704,7 @@ $('btnCsv').onclick = async function () {
 
 /* ---------------------------------------------------------------- Start -- */
 (async function () {
+  seedLists();
   pSorte = new Picker('sorten', 'Sorte', $('pickSorte'), onSorteChange);
   pStandort = new Picker('standorte', 'Standort', $('pickStandort'), null);
   // Uebernahme aus einer frueheren Fassung, die noch Textfelder hatte
