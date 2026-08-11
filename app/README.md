@@ -18,14 +18,30 @@ Danach läuft alles offline vom Gerät.
 
 ## Bedienung
 
-1. Sorte und Standort eintragen (werden gemerkt und beim nächsten Mal
-   vorgeschlagen).
+1. Sorte und Standort antippen. Nach der Auswahl klappt die Liste zu und zeigt
+   nur noch den gewählten Eintrag — mit *ändern* kommt sie wieder hervor. So
+   bleibt der Bildschirm frei, wenn viele Proben derselben Sorte laufen.
 2. **Foto aufnehmen** oder eine Datei wählen.
 3. Ergebnis prüfen. Eine falsch erkannte Beere **antippen** entfernt sie, ein
    Tipp auf eine übersehene Beere ergänzt sie. Der Zähler läuft mit.
 4. Gewicht eintippen, falls gewünscht — das Einzelbeerengewicht rechnet sich
    selbst aus. Das Feld ist optional.
 5. **Probe speichern.** Am Ende des Messtags **CSV** exportieren.
+
+## Listen für Sorte und Standort
+
+Beide Listen lassen sich in der App pflegen: *Liste bearbeiten* antippen, dann
+
+* **hinzufügen** über das Feld unten (oder direkt über die Schaltfläche *+ Neu*),
+* **umbenennen** durch Antippen eines Eintrags,
+* **entfernen** über das ✕ am Eintrag.
+
+Die Listen liegen im Speicher des jeweiligen Geräts, nicht zentral — jeder
+Messplatz pflegt also seine eigene Auswahl. Beim Umbenennen zieht die
+Kalibrierung der Sorte automatisch mit um.
+
+Ausgeliefert wird eine kurze Startliste; die übrigen Einträge legen Sie einmal
+selbst an. Ein gelöschter Website-Speicher löscht auch die Listen.
 
 ## Kalibrierung
 

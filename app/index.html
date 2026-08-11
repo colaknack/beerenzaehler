@@ -58,6 +58,30 @@
   .slider{display:flex;align-items:center;gap:10px}
   .slider output{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;
                  color:var(--mut);font-size:14px}
+
+  /* Auswahlflaechen fuer Sorte und Standort. Mindesthoehe 46 px, damit sie sich
+     mit Handschuhen und in Eile sicher treffen lassen. */
+  .pick{margin-bottom:14px}
+  .pick:last-of-type{margin-bottom:0}
+  .pick .head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .pick .head label{margin:0;flex:1}
+  .pick .head button{background:none;border:0;color:var(--acc);font-size:13px;
+                     font-weight:600;padding:6px 2px;cursor:pointer;width:auto;flex:0 0 auto}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:var(--bg);border:1.5px solid var(--line);border-radius:999px;
+        padding:0 15px;min-height:46px;font-size:15px;color:var(--ink);cursor:pointer;
+        display:inline-flex;align-items:center;gap:8px;width:auto;font-weight:400}
+  .chip.on{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  .chip.add{border-style:dashed;color:var(--mut)}
+  .chip .x{font-weight:700;opacity:.7;margin-right:-4px;padding:0 2px}
+  .sel{display:flex;align-items:center;gap:10px;min-height:46px}
+  .sel .val{flex:1;font-size:17px;font-weight:600}
+  .sel .val.leer{color:var(--mut);font-weight:400;font-size:15px}
+  .addrow{display:flex;gap:8px;margin-top:9px}
+  .addrow input{flex:1;min-height:46px}
+  .addrow button{flex:0 0 auto;width:auto;padding:0 16px;min-height:46px}
+  .chip input.ren{border:0;background:transparent;padding:0;width:8.5em;font:inherit;
+                  color:inherit;min-height:0}
 </style>
 </head>
 <body>
@@ -71,18 +95,8 @@
 
   <!-- ------------------------------------------------ Aufnahme / Auswertung -->
   <section class="card" id="cardShot">
-    <div class="row">
-      <div>
-        <label for="sorte">Sorte</label>
-        <input id="sorte" list="sorten" autocomplete="off" placeholder="z. B. Riesling">
-        <datalist id="sorten"></datalist>
-      </div>
-      <div>
-        <label for="standort">Standort</label>
-        <input id="standort" list="standorte" autocomplete="off" placeholder="z. B. Oppenheim">
-        <datalist id="standorte"></datalist>
-      </div>
-    </div>
+    <div class="pick" id="pickSorte"></div>
+    <div class="pick" id="pickStandort"></div>
     <div class="btns">
       <button id="btnCam">Foto aufnehmen</button>
       <button id="btnFile" class="sec">Datei wählen</button>
@@ -165,11 +179,195 @@ const LS = { radius: 'bz.radius', sorte: 'bz.sorte', standort: 'bz.standort' };
 
 const $ = function (id) { return document.getElementById(id); };
 
+/* ------------------------------------------------- Auswahl Sorte/Standort --
+   Beide Listen liegen im Speicher des Geraets und lassen sich in der App
+   bearbeiten und erweitern. Bewusst geraetelokal: jeder Messplatz pflegt die
+   Liste, die er braucht, ohne Abstimmung mit den anderen. */
+const START = {
+  sorten:    ['Riesling', 'Grauburgunder', 'Dornfelder'],
+  standorte: ['Oppenheim']
+};
+
+function listGet(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem('bz.liste.' + key) || 'null');
+    if (Array.isArray(v)) return v;
+  } catch (e) { /* beschaedigter Eintrag -> Startliste */ }
+  return START[key].slice();
+}
+function listSet(key, arr) {
+  localStorage.setItem('bz.liste.' + key, JSON.stringify(arr));
+}
+
+function Picker(key, label, host, onChange) {
+  this.key = key; this.label = label; this.host = host; this.onChange = onChange;
+  this.items = listGet(key);
+  this.value = localStorage.getItem('bz.sel.' + key) || '';
+  if (this.value && this.items.indexOf(this.value) < 0) this.value = '';
+  this.open = !this.value;          // ausgewaehlt -> eingeklappt, spart Platz
+  this.edit = false;
+  this.render();
+}
+
+Picker.prototype.select = function (v) {
+  this.value = v;
+  localStorage.setItem('bz.sel.' + this.key, v);
+  this.open = false; this.edit = false;
+  this.render();
+  if (this.onChange) this.onChange(v);
+};
+
+/* Nimmt einen Wert in die Liste auf, falls er noch fehlt (z. B. aus alten
+   Proben oder aus einer frueheren Fassung der App). */
+Picker.prototype.ensure = function (v) {
+  v = (v || '').trim();
+  if (!v || this.items.indexOf(v) >= 0) return;
+  this.items.push(v); listSet(this.key, this.items); this.render();
+};
+
+Picker.prototype.add = function (v) {
+  v = (v || '').trim();
+  if (!v) return;
+  if (this.items.indexOf(v) < 0) { this.items.push(v); listSet(this.key, this.items); }
+  this.select(v);
+};
+
+Picker.prototype.remove = function (v) {
+  const i = this.items.indexOf(v);
+  if (i < 0) return;
+  this.items.splice(i, 1); listSet(this.key, this.items);
+  localStorage.removeItem(LS.radius + '.' + v.toLowerCase());
+  if (this.value === v) { this.value = ''; localStorage.removeItem('bz.sel.' + this.key); }
+  this.render();
+};
+
+Picker.prototype.rename = function (alt, neu) {
+  neu = (neu || '').trim();
+  const i = this.items.indexOf(alt);
+  if (i < 0 || !neu || neu === alt) { this.render(); return; }
+  if (this.items.indexOf(neu) >= 0) { this.render(); return; }   // Dublette
+  this.items[i] = neu; listSet(this.key, this.items);
+  // Kalibrierung mit umziehen, sonst geht sie beim Umbenennen verloren
+  const old = localStorage.getItem(LS.radius + '.' + alt.toLowerCase());
+  if (old) {
+    localStorage.setItem(LS.radius + '.' + neu.toLowerCase(), old);
+    localStorage.removeItem(LS.radius + '.' + alt.toLowerCase());
+  }
+  if (this.value === alt) { this.value = neu; localStorage.setItem('bz.sel.' + this.key, neu); }
+  this.render();
+};
+
+Picker.prototype.render = function () {
+  const self = this;
+  const h = document.createElement('div');
+  h.className = 'head';
+  const lab = document.createElement('label');
+  lab.textContent = this.label;
+  h.appendChild(lab);
+
+  if (this.open) {
+    const be = document.createElement('button');
+    be.type = 'button';
+    be.textContent = this.edit ? 'Fertig' : 'Liste bearbeiten';
+    be.onclick = function () { self.edit = !self.edit; self.render(); };
+    h.appendChild(be);
+  }
+
+  this.host.innerHTML = '';
+  this.host.appendChild(h);
+
+  if (!this.open) {
+    const row = document.createElement('div');
+    row.className = 'sel';
+    const v = document.createElement('span');
+    v.className = 'val' + (this.value ? '' : ' leer');
+    v.textContent = this.value || 'nichts gewählt';
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'sec';
+    b.style.cssText = 'width:auto;flex:0 0 auto;padding:10px 16px;min-height:46px';
+    b.textContent = 'ändern';
+    b.onclick = function () { self.open = true; self.render(); };
+    row.appendChild(v); row.appendChild(b);
+    this.host.appendChild(row);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'chips';
+  this.items.forEach(function (it) {
+    const c = document.createElement('button');
+    c.type = 'button';
+    c.className = 'chip' + (it === self.value && !self.edit ? ' on' : '');
+    const t = document.createElement('span');
+    t.textContent = it;
+    c.appendChild(t);
+    if (self.edit) {
+      const x = document.createElement('span');
+      x.className = 'x'; x.textContent = '✕';
+      x.onclick = function (e) {
+        e.stopPropagation();
+        if (confirm('„' + it + '" aus der Liste entfernen?')) self.remove(it);
+      };
+      c.appendChild(x);
+      // Antippen im Bearbeiten-Modus benennt um
+      c.onclick = function () {
+        const inp = document.createElement('input');
+        inp.className = 'ren'; inp.value = it;
+        c.replaceChild(inp, t);
+        inp.focus(); inp.select();
+        let done = false;
+        const fin = function () { if (!done) { done = true; self.rename(it, inp.value); } };
+        inp.onblur = fin;
+        inp.onkeydown = function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); fin(); }
+          if (e.key === 'Escape') { done = true; self.render(); }
+        };
+        inp.onclick = function (e) { e.stopPropagation(); };
+      };
+    } else {
+      c.onclick = function () { self.select(it); };
+    }
+    wrap.appendChild(c);
+  });
+
+  if (!this.edit) {
+    const plus = document.createElement('button');
+    plus.type = 'button'; plus.className = 'chip add';
+    plus.textContent = '+ Neu';
+    plus.onclick = function () { self.edit = true; self.render(); };
+    wrap.appendChild(plus);
+  }
+  this.host.appendChild(wrap);
+
+  if (this.edit) {
+    const row = document.createElement('div');
+    row.className = 'addrow';
+    const inp = document.createElement('input');
+    inp.placeholder = this.label + ' hinzufügen';
+    inp.autocomplete = 'off';
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = 'Hinzufügen';
+    const go = function () { const v = inp.value; inp.value = ''; if (v.trim()) self.add(v); };
+    b.onclick = go;
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+    row.appendChild(inp); row.appendChild(b);
+    this.host.appendChild(row);
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Eintrag antippen zum Umbenennen, ✕ entfernt ihn.';
+    this.host.appendChild(hint);
+  }
+};
+
+let pSorte = null, pStandort = null;
+function sorteVal() { return pSorte ? pSorte.value : ''; }
+function standortVal() { return pStandort ? pStandort.value : ''; }
+
 /* Die Beerengroesse haengt an der Sorte -- Riesling und Dornfelder liegen weit
    auseinander. Die Kalibrierung wird deshalb je Sorte gemerkt, mit dem zuletzt
    benutzten Wert als Rueckfall fuer eine noch unbekannte Sorte. */
 function radiusKey() {
-  const s = ($('sorte').value || '').trim().toLowerCase();
+  const s = sorteVal().trim().toLowerCase();
   return s ? LS.radius + '.' + s : LS.radius;
 }
 function loadRadius() {
@@ -353,7 +551,7 @@ $('rad').addEventListener('change', function () {
 });
 
 /* Sortenwechsel: die dazu gespeicherte Kalibrierung uebernehmen und neu zaehlen. */
-$('sorte').addEventListener('change', function () {
+function onSorteChange() {
   if (!S.img) return;
   const r = loadRadius();
   if (r > 0 && Math.abs(r - S.radius) > 0.5) {
@@ -362,7 +560,7 @@ $('sorte').addEventListener('change', function () {
     $('radOut').textContent = Math.round(r) + ' px';
     recount();
   }
-});
+}
 $('gew').addEventListener('input', updateEbg);
 
 $('btnCam').onclick = function () { $('fileCam').click(); };
@@ -381,15 +579,13 @@ $('btnSave').onclick = async function () {
   const g = parseFloat(($('gew').value || '').replace(',', '.'));
   const rec = {
     ts: Date.now(),
-    sorte: $('sorte').value.trim(),
-    standort: $('standort').value.trim(),
+    sorte: sorteVal().trim(),
+    standort: standortVal().trim(),
     n: S.peaks.length,
     gewicht: isFinite(g) && g > 0 ? g : null,
     radius: Math.round(S.radius),
     korrigiert: S.dirty
   };
-  localStorage.setItem(LS.sorte, rec.sorte);
-  localStorage.setItem(LS.standort, rec.standort);
   await dbAdd(rec);
   $('gew').value = '';
   $('btnDrop').onclick();
@@ -425,12 +621,10 @@ async function refresh() {
   tb.querySelectorAll('[data-del]').forEach(function (b) {
     b.onclick = async function () { await dbDel(+b.dataset.del); refresh(); };
   });
-  const fill = function (id, set) {
-    $(id).innerHTML = Array.from(set).map(function (v) {
-      return '<option value="' + v.replace(/"/g, '&quot;') + '">';
-    }).join('');
-  };
-  fill('sorten', sorten); fill('standorte', orte);
+  // Werte aus frueheren Proben in die Auswahllisten uebernehmen, damit beim
+  // Wechsel auf die Schaltflaechen nichts verloren geht.
+  if (pSorte) sorten.forEach(function (v) { pSorte.ensure(v); });
+  if (pStandort) orte.forEach(function (v) { pStandort.ensure(v); });
 }
 
 /* ------------------------------------------------------------- Ausgabe --- */
@@ -462,8 +656,17 @@ $('btnCsv').onclick = async function () {
 
 /* ---------------------------------------------------------------- Start -- */
 (async function () {
-  $('sorte').value = localStorage.getItem(LS.sorte) || '';
-  $('standort').value = localStorage.getItem(LS.standort) || '';
+  pSorte = new Picker('sorten', 'Sorte', $('pickSorte'), onSorteChange);
+  pStandort = new Picker('standorte', 'Standort', $('pickStandort'), null);
+  // Uebernahme aus einer frueheren Fassung, die noch Textfelder hatte
+  ['sorte', 'standort'].forEach(function (k) {
+    const v = localStorage.getItem(LS[k]);
+    if (!v) return;
+    const p = k === 'sorte' ? pSorte : pStandort;
+    p.ensure(v);
+    if (!p.value) p.select(v);
+    localStorage.removeItem(LS[k]);
+  });
   await openDb();
   await refresh();
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
