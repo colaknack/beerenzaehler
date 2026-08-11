@@ -1,0 +1,10 @@
+# Es wird bewusst nur die Web-App veroeffentlicht.
+# Arbeitsdateien, Laborfotos und Zwischenergebnisse bleiben lokal.
+samples/
+out/
+proto/
+cad/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
