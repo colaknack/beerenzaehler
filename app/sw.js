@@ -1,7 +1,7 @@
 /* Service Worker: legt die App vollstaendig lokal ab, damit sie ohne Netz
    laeuft. Nach dem einmaligen Installieren auf dem Smartphone ist keine
    Verbindung mehr noetig -- es wird nichts an einen Server geschickt. */
-const CACHE = 'beerenzaehler-v7';
+const CACHE = 'beerenzaehler-v8';
 const FILES = [
   '.', 'index.html', 'vision.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png'

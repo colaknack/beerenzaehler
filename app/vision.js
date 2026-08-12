@@ -7,9 +7,10 @@
  * weitgehend unempfindlich gegen Schlagschatten, da ein Schatten keine
  * geschlossene Radialsymmetrie besitzt.
  *
- * Selbstkalibrierung: Der Beerenradius wird nicht vorgegeben, sondern aus dem
- * Bild selbst bestimmt (Flaeche der Beerenmaske geteilt durch die Anzahl der
- * gefundenen Zentren, iterativ).
+ * Der Beerenradius ist eine Konstante des Aufbaus (Stativ, gleiche Hoehe,
+ * gleiche Platte). Er kommt als Vorgabewert aus der Bildgroesse und wird ueber
+ * den Schieber je Sorte gespeichert. Automatische Schaetzer aus dem Bild wurden
+ * geprueft und verworfen, siehe suggestRadius().
  *
  * Kein Framework, keine Module -- laeuft auch per Doppelklick von file:// .
  */
@@ -285,6 +286,35 @@
     return { mask: m, frac: a / n };
   }
 
+  /* Groesstes einbeschriebenes achsparalleles Rechteck (Histogramm-Verfahren).
+     Die Schale ist rechteckig; helle Stellen auf der Arbeitsplatte, die per
+     Helligkeit mit in die Maske geraten, sind es nicht. Das Rechteck schneidet
+     diese Auslaeufer ab, ohne die Schale selbst zu beschneiden. */
+  function largestRect(mask, w, h) {
+    const height = new Int32Array(w);
+    const stack = new Int32Array(w + 1);
+    let best = 0, bx0 = 0, by0 = 0, bx1 = w - 1, by1 = h - 1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) height[x] = mask[row + x] ? height[x] + 1 : 0;
+      let sp = 0;
+      for (let i = 0; i <= w; i++) {
+        const cur = i < w ? height[i] : 0;
+        while (sp > 0 && height[stack[sp - 1]] >= cur) {
+          const top = stack[--sp];
+          const left = sp === 0 ? 0 : stack[sp - 1] + 1;
+          const area = height[top] * (i - left);
+          if (area > best) {
+            best = area; bx0 = left; bx1 = i - 1;
+            by1 = y; by0 = y - height[top] + 1;
+          }
+        }
+        stack[sp++] = i;
+      }
+    }
+    return { x0: bx0, y0: by0, x1: bx1, y1: by1, area: best };
+  }
+
   function findTray(rgba, w, h) {
     const n = w * h, sv = satVal(rgba, n);
     const a = trayFrom(sv, w, h, otsuV(sv.S, sv.V, n) * 0.9);
@@ -292,9 +322,23 @@
     // aber bei ungleichmaessigem Licht in die Schale hineinschneiden. Die Schale
     // fuellt das Bild immer weitgehend aus -- faellt die Maske klein aus, ist die
     // Schwelle zu hoch. Dann gilt wieder die alte, mildere Schwelle.
-    if (a.frac >= 0.25) return a.mask;
-    const b = trayFrom(sv, w, h, percentile(sv.V, 0.60) * 0.55);
-    return b.frac > a.frac ? b.mask : a.mask;
+    let m = a.mask;
+    if (a.frac < 0.25) {
+      const b = trayFrom(sv, w, h, percentile(sv.V, 0.60) * 0.55);
+      if (b.frac > a.frac) m = b.mask;
+    }
+    // Auf das einbeschriebene Rechteck begrenzen, mit Zugabe fuer eine leicht
+    // schraeg liegende Schale.
+    const r = largestRect(m, w, h);
+    const pad = Math.round(Math.min(w, h) * 0.033);
+    const x0 = r.x0 - pad, x1 = r.x1 + pad, y0 = r.y0 - pad, y1 = r.y1 + pad;
+    for (let y = 0; y < h; y++) {
+      const inY = y >= y0 && y <= y1;
+      for (let x = 0; x < w; x++) {
+        if (!inY || x < x0 || x > x1) m[y * w + x] = 0;
+      }
+    }
+    return m;
   }
 
   // ------------------------------------------------------- Beerenkennwerte ---
@@ -489,18 +533,15 @@
   const CFG = { alpha: 2.0, beta: 0.05, thr: 0.022, nms: 1.10, factors: [0.85, 1.0, 1.15] };
 
   /* Startwert fuer den Beerenradius, wenn noch nicht kalibriert wurde.
-     Bewusst nur ein Vorschlag: Im festen Aufbau (Stativ, gleiche Hoehe, gleiche
-     Schale) ist der Radius eine Konstante der Anlage. Er wird einmal am Regler
-     eingestellt und danach gespeichert; sobald die Platte mit Passmarken im
-     Einsatz ist, ergibt er sich exakt aus deren Massstab.
-     Grundlage: Flaeche der Beerenmaske, geteilt durch eine typische Belegung. */
+     Bewusst eine feste Groesse statt einer Schaetzung aus dem Bild: Drei
+     Verfahren wurden geprueft -- Maskenflaeche je Beere, Kantenprofil und
+     Nachbarabstand. Alle drei schwankten auf nahezu gleichen Aufnahmen um mehr
+     als ein Drittel, das Nachbarabstandsverfahren schaukelte sich sogar auf.
+     Ein Viertelprozent der kurzen Bildkante trifft den Aufbau (Platte formatfuellend
+     fotografiert) verlaesslich; Abweichungen davon regelt der Schieber, dessen
+     Wert je Sorte gespeichert wird. */
   function suggestRadius(f, tray, n, w, h) {
-    const bm = berryMask(f, tray, n);
-    let trayPx = 0;
-    for (let i = 0; i < n; i++) if (tray[i]) trayPx++;
-    const assumed = 110;                       // uebliche Probengroesse
-    const r = Math.sqrt(bm.area / (assumed * Math.PI));
-    return Math.min(Math.max(r, Math.min(w, h) * 0.008), Math.min(w, h) * 0.07);
+    return Math.min(w, h) * 0.025;
   }
 
   function count(rgba, w, h, opts) {
