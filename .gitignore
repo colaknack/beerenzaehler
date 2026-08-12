@@ -8,3 +8,5 @@ cad/
 __pycache__/
 *.pyc
 .DS_Store
+samples2/
+samples*/

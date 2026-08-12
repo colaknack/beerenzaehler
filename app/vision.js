@@ -245,9 +245,35 @@
 
   // --------------------------------------------------------------- Schale ----
 
+  /* Helligkeitsschwelle per Otsu, gerechnet nur ueber die unbunten Bildteile.
+     Eine feste Prozentschwelle hat auf einer hellen Arbeitsplatte auch den
+     Untergrund mitgenommen; der Schalenrand lieferte dann Scheinbeeren. Otsu
+     trennt Schale und Untergrund dagegen an der tatsaechlichen Luecke im
+     Histogramm. Der Faktor 0.9 gibt etwas Luft fuer abgeschattete Schalenecken. */
+  function otsuV(S, V, n) {
+    const hist = new Int32Array(256);
+    let tot = 0;
+    for (let i = 0; i < n; i++) if (S[i] < 80) { hist[V[i]]++; tot++; }
+    if (!tot) return 128;
+    let sum = 0;
+    for (let v = 0; v < 256; v++) sum += v * hist[v];
+    let wB = 0, sB = 0, best = -1, thr = 128;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (!wB) continue;
+      const wF = tot - wB;
+      if (!wF) break;
+      sB += t * hist[t];
+      const mB = sB / wB, mF = (sum - sB) / wF;
+      const v = wB * wF * (mB - mF) * (mB - mF);
+      if (v > best) { best = v; thr = t; }
+    }
+    return thr;
+  }
+
   function findTray(rgba, w, h) {
     const n = w * h, sv = satVal(rgba, n);
-    const thrV = percentile(sv.V, 0.60) * 0.55;
+    const thrV = otsuV(sv.S, sv.V, n) * 0.9;
     const cand = new Uint8Array(n);
     for (let i = 0; i < n; i++) cand[i] = (sv.S[i] < 80 && sv.V[i] > thrV) ? 1 : 0;
     const mn = Math.min(w, h);
