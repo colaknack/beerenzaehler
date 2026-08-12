@@ -271,16 +271,30 @@
     return thr;
   }
 
-  function findTray(rgba, w, h) {
-    const n = w * h, sv = satVal(rgba, n);
-    const thrV = otsuV(sv.S, sv.V, n) * 0.9;
+  function trayFrom(sv, w, h, thrV) {
+    const n = w * h;
     const cand = new Uint8Array(n);
     for (let i = 0; i < n; i++) cand[i] = (sv.S[i] < 80 && sv.V[i] > thrV) ? 1 : 0;
     const mn = Math.min(w, h);
     let m = closing(cand, w, h, Math.max(2, mn * 0.012));
     m = mainComponent(m, w, h);
     m = fillHoles(m, w, h);
-    return erode(m, w, h, mn * 0.055);
+    m = erode(m, w, h, mn * 0.055);
+    let a = 0;
+    for (let i = 0; i < n; i++) a += m[i];
+    return { mask: m, frac: a / n };
+  }
+
+  function findTray(rgba, w, h) {
+    const n = w * h, sv = satVal(rgba, n);
+    const a = trayFrom(sv, w, h, otsuV(sv.S, sv.V, n) * 0.9);
+    // Rueckfall: Otsu trennt Schale und Untergrund normalerweise sauber, kann
+    // aber bei ungleichmaessigem Licht in die Schale hineinschneiden. Die Schale
+    // fuellt das Bild immer weitgehend aus -- faellt die Maske klein aus, ist die
+    // Schwelle zu hoch. Dann gilt wieder die alte, mildere Schwelle.
+    if (a.frac >= 0.25) return a.mask;
+    const b = trayFrom(sv, w, h, percentile(sv.V, 0.60) * 0.55);
+    return b.frac > a.frac ? b.mask : a.mask;
   }
 
   // ------------------------------------------------------- Beerenkennwerte ---
