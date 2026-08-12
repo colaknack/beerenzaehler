@@ -480,10 +480,13 @@
 
   // ------------------------------------------------------------- Pipeline ----
 
-  /* Werte gegen zwei ausgezaehlte Referenzbilder abgestimmt
-     (gruen 100 Beeren, blau 105). Ergebnis bei kalibriertem Radius:
-     gruen 100, blau 96. */
-  const CFG = { alpha: 2.0, beta: 0.05, thr: 0.030, nms: 1.10, factors: [0.85, 1.0, 1.15] };
+  /* Gegen fuenf ausgezaehlte Referenzbilder abgestimmt (474 Beeren).
+     Die Schwelle wirkt relativ zum staerksten Treffer im Bild. Sie lag bei
+     0.030 und war damit zu hoch, sobald dunkle und blasse Beeren gemischt
+     auftreten: Die dunklen setzen das Maximum, blassgruene Beeren fallen dann
+     unter die Schwelle und fehlen. Bei 0.022 werden sie gefunden, ohne dass
+     nennenswert Fehltreffer dazukommen. */
+  const CFG = { alpha: 2.0, beta: 0.05, thr: 0.022, nms: 1.10, factors: [0.85, 1.0, 1.15] };
 
   /* Startwert fuer den Beerenradius, wenn noch nicht kalibriert wurde.
      Bewusst nur ein Vorschlag: Im festen Aufbau (Stativ, gleiche Hoehe, gleiche
