@@ -55,9 +55,34 @@
   th{color:var(--mut);font-weight:600;font-size:12px}
   .hide{display:none}
   input[type=range]{padding:0}
-  .slider{display:flex;align-items:center;gap:10px}
-  .slider output{min-width:52px;text-align:right;font-variant-numeric:tabular-nums;
-                 color:var(--mut);font-size:14px}
+  /* Zahleneingabe statt Schieber: Der Schieber liess sich beim Blaettern
+     zwischen Proben zu leicht unbeabsichtigt verstellen. */
+  .numrow{display:flex;align-items:center;gap:8px}
+  .numrow input{flex:1;text-align:center;font-variant-numeric:tabular-nums;
+                font-size:18px;font-weight:600;min-height:48px}
+  .numrow .step{flex:0 0 56px;width:56px;min-height:48px;padding:0;font-size:22px;
+                line-height:1;font-weight:700}
+
+  /* Kamera in der App: erlaubt Blitz und Zoom fest einzustellen */
+  #camWrap{position:fixed;inset:0;z-index:50;background:#000;display:none}
+  #camWrap.on{display:flex;flex-direction:column}
+  #camVideo{flex:1;width:100%;object-fit:contain;background:#000}
+  #camBar{padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);
+          background:#111;color:#fff;display:flex;flex-direction:column;gap:10px}
+  #camBar .line{display:flex;align-items:center;gap:10px}
+  #camBar label{color:#bbb;margin:0;flex:0 0 auto;font-size:13px}
+  #camBar input[type=number]{width:84px;text-align:center;background:#222;
+                             border-color:#444;color:#fff;min-height:44px}
+  #camBar button{min-height:48px}
+  #camBar .toggle{background:#333;color:#fff;border:1.5px solid #555}
+  #camBar .toggle.on{background:var(--acc);border-color:var(--acc)}
+  #camNote{color:#f3b0b0;font-size:12.5px}
+
+  footer{padding:4px 14px 26px;color:var(--mut);font-size:12px;text-align:center}
+  footer button{background:none;border:0;color:var(--acc);font-size:12px;
+                font-weight:600;padding:6px;cursor:pointer;width:auto}
+  footer .ok{color:#2e7d32}
+  footer .neu{color:#b26a00}
 
   /* Auswahlflaechen fuer Sorte und Standort. Mindesthoehe 46 px, damit sie sich
      mit Handschuhen und in Eile sicher treffen lassen. */
@@ -119,10 +144,11 @@
     <p class="hint" id="quality"></p>
 
     <div style="margin-top:12px">
-      <label for="rad">Beerengröße kalibrieren (wird gemerkt)</label>
-      <div class="slider">
-        <input type="range" id="rad" min="8" max="80" step="1">
-        <output id="radOut"></output>
+      <label for="rad">Beerengröße in Pixeln (wird je Sorte gemerkt)</label>
+      <div class="numrow">
+        <button type="button" class="sec step" id="radMinus" aria-label="kleiner">−</button>
+        <input id="rad" type="number" inputmode="numeric" step="1">
+        <button type="button" class="sec step" id="radPlus" aria-label="größer">+</button>
       </div>
     </div>
 
@@ -159,6 +185,33 @@
   </section>
 
 </main>
+
+<footer>
+  Version <span id="verLocal">–</span> <span id="verState"></span>
+  <button id="btnUpdate" type="button">Aktualisierung prüfen</button>
+</footer>
+
+<!-- Kamera in der App. Nur so lassen sich Blitz und Zoomstufe dauerhaft
+     festlegen; die System-Kamera ist für eine Web-App nicht steuerbar. -->
+<div id="camWrap">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="camBar">
+    <div id="camNote" class="hide"></div>
+    <div class="line">
+      <button type="button" class="toggle" id="camTorch">Blitz</button>
+      <label for="camZoom">Zoom</label>
+      <input id="camZoom" type="number" inputmode="decimal" step="0.1" value="2">
+      <span id="camZoomRange" style="color:#888;font-size:12px"></span>
+    </div>
+    <div class="line">
+      <button type="button" id="camShot" style="flex:1">Aufnehmen</button>
+      <button type="button" class="sec" id="camSys"
+              style="flex:0 0 130px;color:#fff;border-color:#666">Systemkamera</button>
+      <button type="button" class="sec" id="camClose"
+              style="flex:0 0 46px;padding:0;color:#fff;border-color:#666">✕</button>
+    </div>
+  </div>
+</div>
 
 <script src="vision.js"></script>
 <script>
@@ -551,7 +604,6 @@ async function loadImage(file) {
   $('rad').min = Math.max(6, Math.round(Math.min(S.w, S.h) * 0.008));
   $('rad').max = Math.round(Math.min(S.w, S.h) * 0.08);
   $('rad').value = Math.round(S.radius);
-  $('radOut').textContent = Math.round(S.radius) + ' px';
 
   S.dirty = false;
   $('busy').classList.remove('on');
@@ -588,15 +640,22 @@ $('cv').addEventListener('click', function (ev) {
   draw();
 });
 
-$('rad').addEventListener('input', function () {
-  S.radius = parseFloat(this.value);
-  $('radOut').textContent = Math.round(S.radius) + ' px';
-  draw();
+/* Beerengroesse: Zahleneingabe. Neu gezaehlt wird erst beim Bestaetigen bzw.
+   beim Verlassen des Feldes, nicht bei jedem Tastendruck. */
+function setRadius(v, recalc) {
+  const lo = parseFloat($('rad').min), hi = parseFloat($('rad').max);
+  v = Math.round(Math.min(Math.max(v, lo), hi));
+  if (!isFinite(v)) return;
+  S.radius = v;
+  $('rad').value = v;
+  if (recalc) { saveRadius(v); recount(); } else { draw(); }
+}
+$('rad').addEventListener('change', function () { setRadius(parseFloat(this.value), true); });
+$('rad').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { e.preventDefault(); this.blur(); }
 });
-$('rad').addEventListener('change', function () {
-  saveRadius(S.radius);
-  recount();
-});
+$('radMinus').onclick = function () { setRadius(S.radius - 1, true); };
+$('radPlus').onclick = function () { setRadius(S.radius + 1, true); };
 
 /* Sortenwechsel: die dazu gespeicherte Kalibrierung uebernehmen und neu zaehlen. */
 function onSorteChange() {
@@ -605,13 +664,12 @@ function onSorteChange() {
   if (r > 0 && Math.abs(r - S.radius) > 0.5) {
     S.radius = r;
     $('rad').value = Math.round(r);
-    $('radOut').textContent = Math.round(r) + ' px';
     recount();
   }
 }
 $('gew').addEventListener('input', updateEbg);
 
-$('btnCam').onclick = function () { $('fileCam').click(); };
+$('btnCam').onclick = camOpen;
 $('btnFile').onclick = function () { $('fileAny').click(); };
 $('fileCam').onchange = function () { if (this.files[0]) loadImage(this.files[0]); this.value = ''; };
 $('fileAny').onchange = function () { if (this.files[0]) loadImage(this.files[0]); this.value = ''; };
@@ -702,8 +760,152 @@ $('btnCsv').onclick = async function () {
   setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
 };
 
+/* ------------------------------------------------------------- Version --- */
+/* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
+const APP_VERSION = '2026-08-13.1';
+
+async function checkUpdate(silent) {
+  const st = $('verState');
+  st.className = ''; st.textContent = silent ? '' : '· prüfe …';
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    const j = await r.json();
+    if (!j.version) throw new Error('keine Angabe');
+    if (j.version === APP_VERSION) {
+      st.className = 'ok'; st.textContent = '· aktuell';
+    } else {
+      st.className = 'neu';
+      st.textContent = '· Version ' + j.version + ' verfügbar';
+      if (!silent && confirm('Neue Fassung ' + j.version + ' verfügbar. Jetzt laden?\n\n' +
+                             'Gespeicherte Proben und Listen bleiben erhalten.')) {
+        await applyUpdate();
+      }
+    }
+  } catch (e) {
+    st.className = ''; st.textContent = silent ? '' : '· offline';
+  }
+}
+
+async function applyUpdate() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function (r) { return r.unregister(); }));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+    }
+  } catch (e) { /* Neuladen hilft auch ohne erfolgreiches Aufraeumen */ }
+  location.reload();
+}
+
+$('btnUpdate').onclick = function () { checkUpdate(false); };
+
+/* ------------------------------------------------------- Kamera in App --- */
+/* Die System-Kamera laesst sich aus einer Web-App nicht steuern. Nur ueber
+   einen eigenen Kamerastrom lassen sich Blitz und Zoomstufe setzen -- und
+   damit dauerhaft speichern. Beides haengt am Geraet: Unter Android/Chrome
+   werden torch und zoom unterstuetzt, unter iOS/Safari nicht. */
+const CAM = { stream: null, track: null, caps: null };
+
+function camPref() {
+  return {
+    torch: localStorage.getItem('bz.cam.torch') === '1',
+    zoom: parseFloat(localStorage.getItem('bz.cam.zoom') || '2') || 2
+  };
+}
+
+async function camApply() {
+  if (!CAM.track) return;
+  const p = camPref(), adv = [];
+  if (CAM.caps && CAM.caps.torch) adv.push({ torch: p.torch });
+  if (CAM.caps && CAM.caps.zoom) {
+    const z = Math.min(Math.max(p.zoom, CAM.caps.zoom.min), CAM.caps.zoom.max);
+    adv.push({ zoom: z });
+    $('camZoom').value = z;
+  }
+  if (adv.length) {
+    try { await CAM.track.applyConstraints({ advanced: adv }); } catch (e) { /* ignorieren */ }
+  }
+  $('camTorch').classList.toggle('on', p.torch);
+}
+
+async function camOpen() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('fileCam').click();
+    return;
+  }
+  try {
+    CAM.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 3840 }, height: { ideal: 2160 }
+      }, audio: false
+    });
+  } catch (e) {
+    $('fileCam').click();                       // z. B. Zugriff verweigert
+    return;
+  }
+  CAM.track = CAM.stream.getVideoTracks()[0];
+  CAM.caps = CAM.track.getCapabilities ? CAM.track.getCapabilities() : {};
+  $('camVideo').srcObject = CAM.stream;
+  $('camWrap').classList.add('on');
+
+  const miss = [];
+  if (!CAM.caps.torch) miss.push('Blitz');
+  if (!CAM.caps.zoom) miss.push('Zoom');
+  const note = $('camNote');
+  if (miss.length) {
+    note.textContent = miss.join(' und ') + ' lässt sich auf diesem Gerät nicht ' +
+      'aus der App steuern. Über „Systemkamera“ aufnehmen und dort einstellen.';
+    note.classList.remove('hide');
+  } else { note.classList.add('hide'); }
+  $('camZoomRange').textContent = CAM.caps.zoom
+    ? CAM.caps.zoom.min + '–' + CAM.caps.zoom.max : '';
+  await camApply();
+}
+
+function camClose() {
+  if (CAM.stream) CAM.stream.getTracks().forEach(function (t) { t.stop(); });
+  CAM.stream = CAM.track = CAM.caps = null;
+  $('camVideo').srcObject = null;
+  $('camWrap').classList.remove('on');
+}
+
+$('camTorch').onclick = async function () {
+  localStorage.setItem('bz.cam.torch', camPref().torch ? '0' : '1');
+  await camApply();
+};
+$('camZoom').addEventListener('change', async function () {
+  const v = parseFloat(String(this.value).replace(',', '.'));
+  if (isFinite(v) && v > 0) localStorage.setItem('bz.cam.zoom', String(v));
+  await camApply();
+});
+$('camClose').onclick = camClose;
+$('camSys').onclick = function () { camClose(); $('fileCam').click(); };
+
+$('camShot').onclick = async function () {
+  if (!CAM.track) return;
+  let blob = null;
+  // Standbild in voller Aufloesung, wenn das Geraet es anbietet
+  if (window.ImageCapture) {
+    try { blob = await new ImageCapture(CAM.track).takePhoto(); } catch (e) { blob = null; }
+  }
+  if (!blob) {
+    const v = $('camVideo');
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.95); });
+  }
+  camClose();
+  if (blob) loadImage(blob);
+};
+
 /* ---------------------------------------------------------------- Start -- */
 (async function () {
+  $('verLocal').textContent = APP_VERSION;
   seedLists();
   pSorte = new Picker('sorten', 'Sorte', $('pickSorte'), onSorteChange);
   pStandort = new Picker('standorte', 'Standort', $('pickStandort'), null);
@@ -721,6 +923,7 @@ $('btnCsv').onclick = async function () {
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     navigator.serviceWorker.register('sw.js').catch(function () {});
   }
+  checkUpdate(true);
 })();
 </script>
 </body>
