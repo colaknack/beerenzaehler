@@ -38,6 +38,12 @@
   button:disabled{opacity:.45;cursor:default}
   .btns{display:flex;gap:10px;margin-top:12px}
   .btns>button{flex:1}
+  /* Auslöser: volle Spaltenbreite, hoch genug, um ihn ohne Hinsehen zu treffen */
+  .bigshot{width:100%;min-height:68px;font-size:20px;margin-top:14px;letter-spacing:.2px}
+  .subrow{display:flex;gap:6px;margin-top:6px;justify-content:center}
+  .subrow button{background:none;border:0;color:var(--mut);font-size:13px;font-weight:600;
+                 width:auto;padding:8px 12px;min-height:40px}
+  .subrow button:active{color:var(--acc)}
   #stage{position:relative;background:#000;border-radius:10px;overflow:hidden;
          touch-action:manipulation;line-height:0}
   #stage canvas{width:100%;height:auto;display:block}
@@ -124,18 +130,17 @@
   <section class="card" id="cardShot">
     <div class="pick" id="pickSorte"></div>
     <div class="pick" id="pickStandort"></div>
-    <div class="btns">
-      <button id="btnCam">Foto aufnehmen</button>
-      <button id="btnFile" class="sec">Datei wählen</button>
-    </div>
-    <!-- Rueckfallweg. Der Hauptknopf nimmt in der App auf, weil sich nur dort
-         Blitz und Zoom festlegen lassen. Welche der rueckseitigen Kameras den
-         Blitz zulaesst, ist geraeteabhaengig und einmal in der Kameraansicht zu
-         waehlen -- beim S10 ist es "camera 2 0, facing back". -->
-    <div style="text-align:center;margin-top:8px">
-      <button id="btnCamSys" type="button"
-              style="background:none;border:0;color:var(--acc);font-size:13px;
-                     font-weight:600;width:auto;padding:6px">Systemkamera …</button>
+    <!-- Ein grosser Auslöser über die volle Breite: der eine Griff, der im
+         Laboralltag hundertfach am Tag getroffen werden muss. Die beiden
+         Nebenwege stehen klein darunter.
+         Der Hauptknopf nimmt in der App auf, weil sich nur dort Blitz und Zoom
+         festlegen lassen. Welche der rueckseitigen Kameras den Blitz zulaesst,
+         ist geraeteabhaengig und einmal in der Kameraansicht zu waehlen --
+         beim S10 ist es "camera 2 0, facing back". -->
+    <button id="btnCam" class="bigshot">Foto aufnehmen</button>
+    <div class="subrow">
+      <button id="btnFile" type="button">Datei wählen</button>
+      <button id="btnCamSys" type="button">Systemkamera</button>
     </div>
     <input type="file" id="fileCam" accept="image/*" capture="environment" class="hide">
     <input type="file" id="fileAny" accept="image/*" class="hide">
@@ -779,7 +784,7 @@ $('btnCsv').onclick = async function () {
 
 /* ------------------------------------------------------------- Version --- */
 /* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
-const APP_VERSION = '2026-08-13.5';
+const APP_VERSION = '2026-08-13.6';
 
 async function checkUpdate(silent) {
   const st = $('verState');
