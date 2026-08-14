@@ -128,6 +128,13 @@
       <button id="btnCam">Foto aufnehmen</button>
       <button id="btnFile" class="sec">Datei wählen</button>
     </div>
+    <!-- Zweitweg: nur hier lassen sich Blitz und Zoom aus der App setzen. Ob das
+         Geraet das zulaesst, ist geraeteabhaengig -- beim S10 nicht. -->
+    <div style="text-align:center;margin-top:8px">
+      <button id="btnCamApp" type="button"
+              style="background:none;border:0;color:var(--acc);font-size:13px;
+                     font-weight:600;width:auto;padding:6px">Kamera in der App …</button>
+    </div>
     <input type="file" id="fileCam" accept="image/*" capture="environment" class="hide">
     <input type="file" id="fileAny" accept="image/*" class="hide">
   </section>
@@ -199,6 +206,11 @@
   <video id="camVideo" playsinline muted autoplay></video>
   <div id="camBar">
     <div id="camNote" class="hide"></div>
+    <div class="line">
+      <label for="camPick">Kamera</label>
+      <select id="camPick" style="flex:1;background:#222;border-color:#444;color:#fff;
+                                  min-height:44px"></select>
+    </div>
     <div class="line">
       <button type="button" class="toggle" id="camTorch">Blitz</button>
       <label for="camZoom">Zoom</label>
@@ -671,7 +683,8 @@ function onSorteChange() {
 }
 $('gew').addEventListener('input', updateEbg);
 
-$('btnCam').onclick = camOpen;
+$('btnCam').onclick = function () { $('fileCam').click(); };
+$('btnCamApp').onclick = function () { camOpen(); };
 $('btnFile').onclick = function () { $('fileAny').click(); };
 $('fileCam').onchange = function () { if (this.files[0]) loadImage(this.files[0]); this.value = ''; };
 $('fileAny').onchange = function () { if (this.files[0]) loadImage(this.files[0]); this.value = ''; };
@@ -764,7 +777,7 @@ $('btnCsv').onclick = async function () {
 
 /* ------------------------------------------------------------- Version --- */
 /* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
-const APP_VERSION = '2026-08-13.2';
+const APP_VERSION = '2026-08-13.4';
 
 async function checkUpdate(silent) {
   const st = $('verState');
@@ -803,6 +816,30 @@ async function applyUpdate() {
 }
 
 $('btnUpdate').onclick = function () { checkUpdate(false); };
+
+/* --------------------------------------------------- Display wachhalten --- */
+/* Bei 100 Proben am Stueck darf der Bildschirm nicht staendig zugehen. Die
+   Sperre geht beim Wegschalten der App von selbst verloren und wird beim
+   Zurueckkehren neu angefordert. Manche Browser verlangen dafuer eine
+   Nutzeraktion -- deshalb zusaetzlich beim ersten Tippen. */
+let wakeLock = null;
+
+async function keepAwake() {
+  if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  if (wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', function () { wakeLock = null; });
+  } catch (e) { wakeLock = null; }
+}
+
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible') keepAwake();
+});
+document.addEventListener('click', function once() {
+  keepAwake();
+  document.removeEventListener('click', once);
+}, true);
 
 /* ------------------------------------------------------- Kamera in App --- */
 /* Die System-Kamera laesst sich aus einer Web-App nicht steuern. Nur ueber
@@ -846,19 +883,44 @@ async function camApply() {
   return ok;
 }
 
-async function camOpen() {
+/* Das Geraet kann mehrere rueckseitige Kameras haben. Der Blitz haengt nicht
+   zwingend an allen, und eine echte Telekamera liefert ein besseres Bild als
+   digitaler Zoom. Deshalb sind sie einzeln waehlbar. */
+async function camList() {
+  const sel = $('camPick');
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    const cams = devs.filter(function (d) { return d.kind === 'videoinput'; });
+    const cur = CAM.track && CAM.track.getSettings ? CAM.track.getSettings().deviceId : '';
+    sel.innerHTML = '';
+    cams.forEach(function (d, i) {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || ('Kamera ' + (i + 1));
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+    sel.parentElement.style.display = cams.length > 1 ? '' : 'none';
+  } catch (e) { sel.parentElement.style.display = 'none'; }
+}
+
+async function camOpen(deviceId) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     $('fileCam').click();
     return;
   }
+  if (CAM.stream) CAM.stream.getTracks().forEach(function (t) { t.stop(); });
+  const want = deviceId || localStorage.getItem('bz.cam.dev') || '';
+  const video = want
+    ? { deviceId: { exact: want }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+    : { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } };
   try {
-    CAM.stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 3840 }, height: { ideal: 2160 }
-      }, audio: false
-    });
+    CAM.stream = await navigator.mediaDevices.getUserMedia({ video: video, audio: false });
   } catch (e) {
+    if (want) {                                 // gespeicherte Kamera gibt es nicht mehr
+      localStorage.removeItem('bz.cam.dev');
+      return camOpen();
+    }
     $('fileCam').click();                       // z. B. Zugriff verweigert
     return;
   }
@@ -880,17 +942,26 @@ async function camOpen() {
   $('camZoomRange').textContent = (CAM.caps && CAM.caps.zoom)
     ? CAM.caps.zoom.min + '–' + CAM.caps.zoom.max : '';
 
+  await camList();
   const ok = await camApply();
   const miss = [];
   if (!ok.torch) miss.push('Blitz');
   if (!ok.zoom) miss.push('Zoom');
   const note = $('camNote');
   if (miss.length) {
-    note.textContent = miss.join(' und ') + ' lässt sich auf diesem Gerät nicht ' +
-      'aus der App steuern. Über „Systemkamera“ aufnehmen und dort einstellen.';
+    const mehr = $('camPick').options.length > 1
+      ? ' Andere Kamera oben probieren, sonst über „Systemkamera“ aufnehmen.'
+      : ' Über „Systemkamera“ aufnehmen und dort einstellen.';
+    note.textContent = miss.join(' und ') + ' lässt sich mit dieser Kamera nicht ' +
+      'aus der App steuern.' + mehr;
     note.classList.remove('hide');
   } else { note.classList.add('hide'); }
 }
+
+$('camPick').addEventListener('change', function () {
+  localStorage.setItem('bz.cam.dev', this.value);
+  camOpen(this.value);
+});
 
 function camClose() {
   if (CAM.stream) CAM.stream.getTracks().forEach(function (t) { t.stop(); });
@@ -920,25 +991,41 @@ $('camSys').onclick = function () { camClose(); $('fileCam').click(); };
 
 $('camShot').onclick = async function () {
   if (!CAM.track) return;
-  let blob = null;
-  // Standbild in voller Aufloesung, wenn das Geraet es anbietet
-  if (window.ImageCapture) {
-    try { blob = await new ImageCapture(CAM.track).takePhoto(); } catch (e) { blob = null; }
-  }
-  if (!blob) {
+  const btn = this;
+  btn.disabled = true;
+  try {
     const v = $('camVideo');
+    if (!v.videoWidth) return;
+    /* Zuerst und ohne Umweg das Bild sichern, das die Vorschau gerade zeigt --
+       also mit eingeschalteter Lampe. Alles andere kann sie vorher abschalten:
+       ImageCapture.takePhoto() loest auf iOS einen eigenen Aufnahmevorgang aus,
+       bei dem das Dauerlicht ausgeht, und schon ein erneutes applyConstraints
+       kann den Strom kurz neu starten. */
     const c = document.createElement('canvas');
     c.width = v.videoWidth; c.height = v.videoHeight;
     c.getContext('2d').drawImage(v, 0, 0);
-    blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.95); });
-  }
-  camClose();
-  if (blob) loadImage(blob);
+    let blob = await new Promise(function (res) { c.toBlob(res, 'image/jpeg', 0.95); });
+
+    // Nur wenn ohne Licht gearbeitet wird, lohnt der Versuch mit hoeherer
+    // Aufloesung. Mit Licht hat das richtig belichtete Bild Vorrang.
+    if (!camPref().torch && window.ImageCapture) {
+      try {
+        const hq = await new ImageCapture(CAM.track).takePhoto();
+        if (hq && hq.size > 0) blob = hq;
+      } catch (e) { /* Vorschaubild behalten */ }
+    }
+    camClose();                          // erst jetzt Licht und Kamera aus
+    if (blob) loadImage(blob);
+  } finally { btn.disabled = false; }
 };
 
 /* ---------------------------------------------------------------- Start -- */
 (async function () {
   $('verLocal').textContent = APP_VERSION;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('btnCamApp').classList.add('hide');
+  }
+  keepAwake();
   seedLists();
   pSorte = new Picker('sorten', 'Sorte', $('pickSorte'), onSorteChange);
   pStandort = new Picker('standorte', 'Standort', $('pickStandort'), null);
