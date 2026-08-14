@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#2f4858">
+<meta name="theme-color" content="#7A1B32">
 <title>Beerenzähler</title>
 <link rel="manifest" href="manifest.webmanifest">
 <style>
   :root{
     --bg:#f4f4f1; --card:#fff; --ink:#1c1c1a; --mut:#6b6b64;
-    --line:#dcdcd4; --acc:#2f4858; --ok:#2e7d4f; --warn:#a8442a;
+    --line:#dcdcd4; --acc:#7A1B32; --ok:#2e7d4f; --warn:#a8442a;
   }
   @media (prefers-color-scheme:dark){
     :root{ --bg:#16171a; --card:#202226; --ink:#ecece8; --mut:#9a9a94;
-           --line:#33353a; --acc:#7fb0c8; }
+           --line:#33353a; --acc:#BC5470; }
   }
   *{box-sizing:border-box}
   body{margin:0;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -44,9 +44,21 @@
   .subrow button{background:none;border:0;color:var(--mut);font-size:13px;font-weight:600;
                  width:auto;padding:8px 12px;min-height:40px}
   .subrow button:active{color:var(--acc)}
+  /* Das Foto bekommt nur so viel Hoehe, dass Zahl und Bedienung darunter noch
+     ins Bild passen -- sonst muesste fuer jede Probe gescrollt werden. */
   #stage{position:relative;background:#000;border-radius:10px;overflow:hidden;
-         touch-action:manipulation;line-height:0}
-  #stage canvas{width:100%;height:auto;display:block}
+         touch-action:manipulation;line-height:0;display:flex;justify-content:center}
+  #stage canvas{max-width:100%;max-height:46vh;width:auto;height:auto;display:block}
+
+  /* Feste Leiste am unteren Rand, solange ein Ergebnis offen ist */
+  #actbar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:none;gap:10px;
+          padding:10px 12px max(env(safe-area-inset-bottom), 12px);
+          background:var(--card);border-top:1px solid var(--line);
+          max-width:820px;margin:0 auto}
+  #actbar.on{display:flex}
+  #actbar #btnSave{flex:2;min-height:60px;font-size:18px}
+  #actbar #btnDrop{flex:1;min-height:60px}
+  body.mitleiste main{padding-bottom:96px}
   #busy{position:absolute;inset:0;display:none;place-items:center;
         background:rgba(0,0,0,.55);color:#fff;font-weight:600}
   #busy.on{display:grid}
@@ -82,9 +94,16 @@
   #camBar input[type=number]{width:84px;text-align:center;background:#222;
                              border-color:#444;color:#fff;min-height:44px}
   #camBar button{min-height:48px}
+  /* Muss nach der Zeile darueber stehen und spezifischer sein, sonst gewinnt
+     deren Mindesthoehe gegen .bigshot */
+  #camBar #camShot{min-height:74px;font-size:21px}
   #camBar .toggle{background:#333;color:#fff;border:1.5px solid #555}
   #camBar .toggle.on{background:var(--acc);border-color:var(--acc)}
   #camNote{color:#f3b0b0;font-size:12.5px}
+  #camSet{display:flex;flex-direction:column;gap:10px}
+  #camSet.hide{display:none}
+  .camsmall button{background:none;border:0;color:#9ab;font-size:13px;font-weight:600;
+                   width:auto;padding:6px 8px;min-height:36px}
 
   footer{padding:4px 14px 26px;color:var(--mut);font-size:12px;text-align:center}
   footer button{background:none;border:0;color:var(--acc);font-size:12px;
@@ -181,10 +200,6 @@
       </div>
     </div>
 
-    <div class="btns">
-      <button id="btnSave">Probe speichern</button>
-      <button id="btnDrop" class="sec">Verwerfen</button>
-    </div>
   </section>
 
   <!-- ------------------------------------------------------------ Proben -->
@@ -207,30 +222,42 @@
   <button id="btnUpdate" type="button">Aktualisierung prüfen</button>
 </footer>
 
+<!-- Speichern und Verwerfen bleiben am unteren Rand stehen. Das Foto fuellt den
+     Bildschirm, und im Laboralltag darf der Abschluss einer Probe nicht hinter
+     einer Bildlaufbewegung liegen. -->
+<div id="actbar">
+  <button id="btnSave">Probe speichern</button>
+  <button id="btnDrop" class="sec">Verwerfen</button>
+</div>
+
 <!-- Kamera in der App. Nur so lassen sich Blitz und Zoomstufe dauerhaft
      festlegen; die System-Kamera ist für eine Web-App nicht steuerbar. -->
 <div id="camWrap">
   <video id="camVideo" playsinline muted autoplay></video>
   <div id="camBar">
     <div id="camNote" class="hide"></div>
-    <div class="line">
-      <label for="camPick">Kamera</label>
-      <select id="camPick" style="flex:1;background:#222;border-color:#444;color:#fff;
-                                  min-height:44px"></select>
+    <!-- Einstellungen sind einmal zu treffen und stehen danach nur im Weg,
+         deshalb eingeklappt. Der Auslöser bekommt den Platz. -->
+    <div id="camSet" class="hide">
+      <div class="line">
+        <label for="camPick">Kamera</label>
+        <select id="camPick" style="flex:1;background:#222;border-color:#444;color:#fff;
+                                    min-height:44px"></select>
+      </div>
+      <div class="line">
+        <button type="button" class="toggle" id="camTorch">Blitz</button>
+        <label for="camZoom">Zoom</label>
+        <input id="camZoom" type="number" inputmode="decimal" step="0.1" value="2">
+        <span id="camZoomRange" style="color:#888;font-size:12px"></span>
+      </div>
     </div>
-    <div class="line">
-      <button type="button" class="toggle" id="camTorch">Blitz</button>
-      <label for="camZoom">Zoom</label>
-      <input id="camZoom" type="number" inputmode="decimal" step="0.1" value="2">
-      <span id="camZoomRange" style="color:#888;font-size:12px"></span>
+    <div class="line camsmall">
+      <button type="button" id="camSetToggle">Einstellungen ▾</button>
+      <span style="flex:1"></span>
+      <button type="button" id="camSys">Systemkamera</button>
+      <button type="button" id="camClose">Schließen</button>
     </div>
-    <div class="line">
-      <button type="button" id="camShot" style="flex:1">Aufnehmen</button>
-      <button type="button" class="sec" id="camSys"
-              style="flex:0 0 130px;color:#fff;border-color:#666">Systemkamera</button>
-      <button type="button" class="sec" id="camClose"
-              style="flex:0 0 46px;padding:0;color:#fff;border-color:#666">✕</button>
-    </div>
+    <button type="button" id="camShot" class="bigshot" style="margin-top:0">Aufnehmen</button>
   </div>
 </div>
 
@@ -592,8 +619,17 @@ function quality() {
 }
 
 /* -------------------------------------------------------------- Ablauf --- */
+/* Solange ein Ergebnis offen ist, tritt das Aufnahmefeld zurueck: Das Foto
+   gehoert nach oben, die Bedienung nach unten, nichts dazwischen. */
+function showBar(on) {
+  $('actbar').classList.toggle('on', on);
+  document.body.classList.toggle('mitleiste', on);
+  $('cardShot').classList.toggle('hide', on);
+}
+
 async function loadImage(file) {
   $('cardResult').classList.remove('hide');
+  showBar(true);
   $('busy').classList.add('on');
   await new Promise(function (r) { setTimeout(r, 30); });   // UI zeichnen lassen
 
@@ -699,6 +735,7 @@ $('fileAny').onchange = function () { if (this.files[0]) loadImage(this.files[0]
 $('btnDrop').onclick = function () {
   S.img = null; S.peaks = [];
   $('cardResult').classList.add('hide');
+  showBar(false);
   $('hdrCount').textContent = '';
 };
 
@@ -784,7 +821,7 @@ $('btnCsv').onclick = async function () {
 
 /* ------------------------------------------------------------- Version --- */
 /* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
-const APP_VERSION = '2026-08-13.6';
+const APP_VERSION = '2026-08-13.8';
 
 async function checkUpdate(silent) {
   const st = $('verState');
@@ -962,6 +999,8 @@ async function camOpen(deviceId) {
     note.textContent = miss.join(' und ') + ' lässt sich mit dieser Kamera nicht ' +
       'aus der App steuern.' + mehr;
     note.classList.remove('hide');
+    $('camSet').classList.remove('hide');      // Kamerawechsel direkt erreichbar
+    $('camSetToggle').textContent = 'Einstellungen \u25B4';
   } else { note.classList.add('hide'); }
 }
 
@@ -994,6 +1033,10 @@ $('camZoom').addEventListener('change', async function () {
   await camApply();
 });
 $('camClose').onclick = camClose;
+$('camSetToggle').onclick = function () {
+  const zu = $('camSet').classList.toggle('hide');
+  this.textContent = zu ? 'Einstellungen \u25BE' : 'Einstellungen \u25B4';
+};
 $('camSys').onclick = function () { camClose(); $('fileCam').click(); };
 
 $('camShot').onclick = async function () {
