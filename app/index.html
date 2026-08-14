@@ -66,8 +66,10 @@
   /* Kamera in der App: erlaubt Blitz und Zoom fest einzustellen */
   #camWrap{position:fixed;inset:0;z-index:50;background:#000;display:none}
   #camWrap.on{display:flex;flex-direction:column}
-  #camVideo{flex:1;width:100%;object-fit:contain;background:#000}
-  #camBar{padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);
+  /* min-height:0 ist zwingend: ohne das schrumpft das Video nicht unter seine
+     natuerliche Hoehe und schiebt die Bedienleiste aus dem Bild. */
+  #camVideo{flex:1 1 0;min-height:0;width:100%;object-fit:contain;background:#000}
+  #camBar{flex:0 0 auto;padding:10px 12px max(env(safe-area-inset-bottom), 14px);
           background:#111;color:#fff;display:flex;flex-direction:column;gap:10px}
   #camBar .line{display:flex;align-items:center;gap:10px}
   #camBar label{color:#bbb;margin:0;flex:0 0 auto;font-size:13px}
@@ -762,7 +764,7 @@ $('btnCsv').onclick = async function () {
 
 /* ------------------------------------------------------------- Version --- */
 /* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
-const APP_VERSION = '2026-08-13.1';
+const APP_VERSION = '2026-08-13.2';
 
 async function checkUpdate(silent) {
   const st = $('verState');
@@ -816,19 +818,32 @@ function camPref() {
   };
 }
 
+/* Einstellungen einzeln setzen und am Erfolg ablesen, was das Geraet kann.
+   getCapabilities() ist hier keine verlaessliche Auskunft: Auf Android meldet
+   es den Blitz haeufig erst, wenn der Strom wirklich Bilder liefert, und
+   manche Geraete koennen ihn, ohne ihn anzukuendigen. */
 async function camApply() {
-  if (!CAM.track) return;
-  const p = camPref(), adv = [];
-  if (CAM.caps && CAM.caps.torch) adv.push({ torch: p.torch });
-  if (CAM.caps && CAM.caps.zoom) {
-    const z = Math.min(Math.max(p.zoom, CAM.caps.zoom.min), CAM.caps.zoom.max);
-    adv.push({ zoom: z });
-    $('camZoom').value = z;
-  }
-  if (adv.length) {
-    try { await CAM.track.applyConstraints({ advanced: adv }); } catch (e) { /* ignorieren */ }
-  }
-  $('camTorch').classList.toggle('on', p.torch);
+  if (!CAM.track) return { torch: false, zoom: false };
+  const p = camPref();
+  const ok = { torch: false, zoom: false };
+
+  try {
+    await CAM.track.applyConstraints({ advanced: [{ torch: p.torch }] });
+    const s = CAM.track.getSettings ? CAM.track.getSettings() : {};
+    ok.torch = ('torch' in s) ? (s.torch === p.torch) : true;
+  } catch (e) { ok.torch = false; }
+
+  const zc = CAM.caps && CAM.caps.zoom;
+  const z = zc ? Math.min(Math.max(p.zoom, zc.min), zc.max) : p.zoom;
+  try {
+    await CAM.track.applyConstraints({ advanced: [{ zoom: z }] });
+    const s = CAM.track.getSettings ? CAM.track.getSettings() : {};
+    ok.zoom = ('zoom' in s) ? Math.abs(s.zoom - z) < 0.5 : true;
+    if (ok.zoom) $('camZoom').value = z;
+  } catch (e) { ok.zoom = false; }
+
+  $('camTorch').classList.toggle('on', p.torch && ok.torch);
+  return ok;
 }
 
 async function camOpen() {
@@ -848,22 +863,33 @@ async function camOpen() {
     return;
   }
   CAM.track = CAM.stream.getVideoTracks()[0];
-  CAM.caps = CAM.track.getCapabilities ? CAM.track.getCapabilities() : {};
-  $('camVideo').srcObject = CAM.stream;
+  const v = $('camVideo');
+  v.srcObject = CAM.stream;
   $('camWrap').classList.add('on');
 
+  // Warten, bis der Strom wirklich Bilder liefert -- vorher meldet das Geraet
+  // seine Faehigkeiten unvollstaendig.
+  await new Promise(function (res) {
+    if (v.readyState >= 2) return res();
+    v.onloadeddata = res;
+    setTimeout(res, 1500);
+  });
+  await new Promise(function (r) { setTimeout(r, 350); });
+
+  CAM.caps = CAM.track.getCapabilities ? CAM.track.getCapabilities() : {};
+  $('camZoomRange').textContent = (CAM.caps && CAM.caps.zoom)
+    ? CAM.caps.zoom.min + '–' + CAM.caps.zoom.max : '';
+
+  const ok = await camApply();
   const miss = [];
-  if (!CAM.caps.torch) miss.push('Blitz');
-  if (!CAM.caps.zoom) miss.push('Zoom');
+  if (!ok.torch) miss.push('Blitz');
+  if (!ok.zoom) miss.push('Zoom');
   const note = $('camNote');
   if (miss.length) {
     note.textContent = miss.join(' und ') + ' lässt sich auf diesem Gerät nicht ' +
       'aus der App steuern. Über „Systemkamera“ aufnehmen und dort einstellen.';
     note.classList.remove('hide');
   } else { note.classList.add('hide'); }
-  $('camZoomRange').textContent = CAM.caps.zoom
-    ? CAM.caps.zoom.min + '–' + CAM.caps.zoom.max : '';
-  await camApply();
 }
 
 function camClose() {
@@ -874,8 +900,15 @@ function camClose() {
 }
 
 $('camTorch').onclick = async function () {
-  localStorage.setItem('bz.cam.torch', camPref().torch ? '0' : '1');
-  await camApply();
+  const wanted = !camPref().torch;
+  localStorage.setItem('bz.cam.torch', wanted ? '1' : '0');
+  const ok = await camApply();
+  const note = $('camNote');
+  if (wanted && !ok.torch) {
+    note.textContent = 'Blitz lässt sich auf diesem Gerät nicht aus der App steuern. ' +
+      'Über „Systemkamera“ aufnehmen und dort einstellen.';
+    note.classList.remove('hide');
+  } else if (ok.torch) { note.classList.add('hide'); }
 };
 $('camZoom').addEventListener('change', async function () {
   const v = parseFloat(String(this.value).replace(',', '.'));
