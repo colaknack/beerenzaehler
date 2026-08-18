@@ -2,7 +2,7 @@
    laeuft. Nach dem einmaligen Installieren auf dem Smartphone ist keine
    Verbindung mehr noetig -- es wird nichts an einen Server geschickt. */
 /* Muss mit APP_VERSION in index.html und mit version.json uebereinstimmen. */
-const CACHE = 'beerenzaehler-2026-08-18.1';
+const CACHE = 'beerenzaehler-2026-08-18.2';
 const FILES = [
   '.', 'index.html', 'vision.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png'

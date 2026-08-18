@@ -519,15 +519,16 @@ function radiusKey() {
   const s = sorteVal().trim().toLowerCase();
   return s ? LS.radius + '.' + s : LS.radius;
 }
+/* Nur der Wert der jeweiligen Sorte zaehlt. Frueher galt zusaetzlich der
+   zuletzt benutzte Wert als Rueckfall -- dann zeigte eine noch nicht
+   kalibrierte Sorte den Wert der vorigen an, was aussah, als wuerde nichts
+   gespeichert. Ohne eigenen Wert greift jetzt die automatische Bestimmung. */
 function loadRadius() {
   const v = parseFloat(localStorage.getItem(radiusKey()) || '');
-  if (v > 0) return v;
-  const g = parseFloat(localStorage.getItem(LS.radius) || '');
-  return g > 0 ? g : 0;
+  return v > 0 ? v : 0;
 }
 function saveRadius(r) {
   localStorage.setItem(radiusKey(), String(r));
-  localStorage.setItem(LS.radius, String(r));
 }
 
 /* ------------------------------------------------------------ Datenbank -- */
@@ -821,7 +822,7 @@ $('btnCsv').onclick = async function () {
 
 /* ------------------------------------------------------------- Version --- */
 /* Muss mit version.json und dem Cache-Namen in sw.js uebereinstimmen. */
-const APP_VERSION = '2026-08-18.1';
+const APP_VERSION = '2026-08-18.2';
 
 async function checkUpdate(silent) {
   const st = $('verState');

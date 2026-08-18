@@ -7,10 +7,9 @@
  * weitgehend unempfindlich gegen Schlagschatten, da ein Schatten keine
  * geschlossene Radialsymmetrie besitzt.
  *
- * Der Beerenradius ist eine Konstante des Aufbaus (Stativ, gleiche Hoehe,
- * gleiche Platte). Er kommt als Vorgabewert aus der Bildgroesse und wird ueber
- * den Schieber je Sorte gespeichert. Automatische Schaetzer aus dem Bild wurden
- * geprueft und verworfen, siehe suggestRadius().
+ * Der Beerenradius ergibt sich aus der Groesse der Platte im Bild und passt
+ * sich damit dem Aufnahmeabstand an, siehe suggestRadius(). Ueber das
+ * Zahlenfeld laesst er sich je Sorte ueberschreiben.
  *
  * Kein Framework, keine Module -- laeuft auch per Doppelklick von file:// .
  */
@@ -496,28 +495,23 @@
       const p = peaks[k];
       const x0 = Math.max(0, p.x - rr), x1 = Math.min(w, p.x + rr);
       const y0 = Math.max(0, p.y - rr), y1 = Math.min(h, p.y + rr);
-      const ds = [], rs = [], hs = [], ss = [], vs = [];
+      const ds = [], rs = [];
       for (let y = y0; y < y1; y += 2) {
         for (let x = x0; x < x1; x += 2) {
-          const i = y * w + x, q = i * 4;
+          const i = y * w + x;
           ds.push(f.d[i]); rs.push(f.ratio[i]);
-          const R = rgba[q], G = rgba[q + 1], B = rgba[q + 2];
-          const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
-          vs.push(mx); ss.push(mx === 0 ? 0 : (mx - mn) * 255 / mx);
-          let hue = 0;
-          if (mx !== mn) {
-            if (mx === R) hue = 30 * (((G - B) / (mx - mn)) % 6);
-            else if (mx === G) hue = 30 * ((B - R) / (mx - mn) + 2);
-            else hue = 30 * ((R - G) / (mx - mn) + 4);
-            if (hue < 0) hue += 180;
-          }
-          hs.push(hue);
         }
       }
       const med = function (a) { a.sort(function (u, v) { return u - v; }); return a[a.length >> 1]; };
-      const pd = med(ds), pr = med(rs), ph = med(hs), ps = med(ss), pv = med(vs);
-      if (ps > 95 && ph >= 8 && ph <= 30 && pv > 140) continue;   // Holzoberflaeche
-      if (pd > refD * 1.6 || pr < 0.80) out.push(p);
+      const pd = med(ds), pr = med(rs);
+      /* Ein Treffer gilt als Beere, wenn er sich farblich deutlich von der
+         Platte abhebt ODER merklich dunkler ist als seine Umgebung.
+         Der Faktor 2.4 trennt leere Mulden sicher ab: gemessen liegen die bei
+         einem Farbabstand um 0.20, Beeren ab 0.31.
+         Ein frueherer Holzfilter (gesaettigt + orange + hell) ist entfallen --
+         er hat blasse, eingefallene Beeren vom Vortag als Holz eingestuft und
+         verworfen; deren Farbton liegt mit 25 bis 30 mitten im Holzbereich. */
+      if (pd > refD * 2.4 || pr < 0.80) out.push(p);
     }
     return out;
   }
@@ -541,7 +535,17 @@
      fotografiert) verlaesslich; Abweichungen davon regelt der Schieber, dessen
      Wert je Sorte gespeichert wird. */
   function suggestRadius(f, tray, n, w, h) {
-    return Math.min(w, h) * 0.0233;
+    /* Der Beerenradius folgt der Groesse der Platte im Bild, nicht der
+       Bildgroesse: Je nach Aufnahmeabstand fuellt die Platte das Bild
+       unterschiedlich stark aus. Die Wurzel der Schalenflaeche ist ein
+       robustes Mass dafuer -- ueber acht ausgezaehlte Proben lag das
+       Verhaeltnis zwischen 0.021 und 0.029.
+       Fruehere Schaetzer aus Maskenflaeche je Beere, Kantenprofil oder
+       Nachbarabstand schwankten dagegen um mehr als ein Drittel. */
+    let area = 0;
+    for (let i = 0; i < n; i++) area += tray[i];
+    const r = 0.025 * Math.sqrt(area);
+    return Math.min(Math.max(r, Math.min(w, h) * 0.010), Math.min(w, h) * 0.055);
   }
 
   function count(rgba, w, h, opts) {
