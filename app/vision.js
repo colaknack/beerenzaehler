@@ -280,7 +280,7 @@
     let m = closing(cand, w, h, Math.max(2, mn * 0.012));
     m = mainComponent(m, w, h);
     m = fillHoles(m, w, h);
-    m = erode(m, w, h, mn * 0.055);
+    m = erode(m, w, h, mn * 0.018);
     let a = 0;
     for (let i = 0; i < n; i++) a += m[i];
     return { mask: m, frac: a / n };
@@ -317,7 +317,7 @@
 
   function findTray(rgba, w, h) {
     const n = w * h, sv = satVal(rgba, n);
-    const a = trayFrom(sv, w, h, otsuV(sv.S, sv.V, n) * 0.9);
+    const a = trayFrom(sv, w, h, otsuV(sv.S, sv.V, n) * 0.88);
     // Rueckfall: Otsu trennt Schale und Untergrund normalerweise sauber, kann
     // aber bei ungleichmaessigem Licht in die Schale hineinschneiden. Die Schale
     // fuellt das Bild immer weitgehend aus -- faellt die Maske klein aus, ist die
@@ -541,7 +541,7 @@
      fotografiert) verlaesslich; Abweichungen davon regelt der Schieber, dessen
      Wert je Sorte gespeichert wird. */
   function suggestRadius(f, tray, n, w, h) {
-    return Math.min(w, h) * 0.025;
+    return Math.min(w, h) * 0.0233;
   }
 
   function count(rgba, w, h, opts) {
